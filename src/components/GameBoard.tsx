@@ -1,13 +1,14 @@
 // src/components/GameBoard.tsx
-import { X, Circle, Trophy, Users, RotateCcw } from "lucide-react";
+import { X, Circle, Trophy, Users, RotateCcw, LogOut } from "lucide-react";
 import { useNakamaMatch } from "../hooks/useNakamaMatch";
 
 interface GameBoardProps {
   username: string;
   roomId: string;
+  onExitGame: () => Promise<void>;
 }
 
-export default function GameBoard({ username, roomId }: GameBoardProps) {
+export default function GameBoard({ username, roomId, onExitGame }: GameBoardProps) {
   const { gameState, mySymbol, makeMove, restartGame, status } = useNakamaMatch(username);
 
   if (!gameState) {
@@ -130,15 +131,25 @@ export default function GameBoard({ username, roomId }: GameBoardProps) {
           Room ID: {roomId}
         </p>
 
-        {gameState.gameOver && (
+        <div className="footer-actions">
+          {gameState.gameOver && (
+            <button
+              onClick={restartGame}
+              className="secondary-btn"
+            >
+              <RotateCcw size={20} />
+              Restart in Same Room
+            </button>
+          )}
           <button
-            onClick={restartGame}
-            className="secondary-btn"
+            onClick={onExitGame}
+            className="danger-btn"
+            type="button"
           >
-            <RotateCcw size={20} />
-            Restart in Same Room
+            <LogOut size={18} />
+            Exit Game
           </button>
-        )}
+        </div>
       </div>
     </div>
   );

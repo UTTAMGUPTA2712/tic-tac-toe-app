@@ -62,9 +62,13 @@ export const useNakamaMatch = (username: string) => {
             setGameState((prev) =>
               prev ? { ...prev, ...parsed, gameOver: true } : null,
             );
-            setStatus(
-              parsed.winner ? `Winner: ${parsed.winner}` : "It's a Draw!",
-            );
+            if (parsed.reason === "opponent_left") {
+              setStatus("Opponent left. You win this game.");
+            } else {
+              setStatus(
+                parsed.winner ? `Winner: ${parsed.winner}` : "It's a Draw!",
+              );
+            }
           }
           break;
 

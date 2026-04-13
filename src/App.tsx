@@ -3,10 +3,15 @@ import {
   clearStoredSession,
   connectSocket,
   createRoom,
+  getLeaderboard,
+  getMatchHistory,
   getConnectionInfo,
   joinRoom,
   joinMatch,
+  leaveMatch,
+  LeaderboardItem,
   loginUser,
+  MatchHistoryItem,
   restoreSessionFromStorage,
   signUpUser,
 } from "./lib/nakama";
@@ -26,6 +31,9 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [isBootstrapping, setIsBootstrapping] = useState(true);
+  const [history, setHistory] = useState<MatchHistoryItem[]>([]);
+  const [leaderboard, setLeaderboard] = useState<LeaderboardItem[]>([]);
+  const [isStatsLoading, setIsStatsLoading] = useState(false);
 
   useEffect(() => {
     const restore = async () => {
@@ -99,6 +107,39 @@ function App() {
       setIsLoading(false);
     }
   };
+
+  const loadStats = async () => {
+    setIsStatsLoading(true);
+    try {
+      const [historyRes, leaderboardRes] = await Promise.all([
+        getMatchHistory(10),
+        getLeaderboard(10),
+      ]);
+      setHistory(historyRes.records);
+      setLeaderboard(leaderboardRes.records);
+    } catch (err: any) {
+      setError(err.message || "Failed to load leaderboard/history.");
+    } finally {
+      setIsStatsLoading(false);
+    }
+  };
+
+  const handleExitGame = async () => {
+    try {
+      await leaveMatch();
+    } catch (_err) {
+      // ignore and continue to lobby
+    }
+    setCurrentRoomId("");
+    setStage("lobby");
+    loadStats();
+  };
+
+  useEffect(() => {
+    if (stage === "lobby") {
+      loadStats();
+    }
+  }, [stage]);
 
   return (
     <div className="app-shell">
@@ -231,11 +272,69 @@ function App() {
                 </button>
 
                 {error && <div className="error-box">{error}</div>}
+
+                <button
+                  className="secondary-btn full-btn"
+                  type="button"
+                  onClick={loadStats}
+                  disabled={isStatsLoading}
+                >
+                  {isStatsLoading ? "Refreshing..." : "Refresh Leaderboard/History"}
+                </button>
+              </div>
+            </div>
+
+            <div className="stats-grid">
+              <div className="stats-card">
+                <h3>Leaderboard</h3>
+                {leaderboard.length === 0 ? (
+                  <p className="muted-copy">
+                    {isStatsLoading ? "Loading..." : "No leaderboard entries yet."}
+                  </p>
+                ) : (
+                  <div className="stats-list">
+                    {leaderboard.map((entry, idx) => (
+                      <div className="stats-row" key={`${entry.ownerId}-${idx}`}>
+                        <span>#{idx + 1} {entry.username}</span>
+                        <span>
+                          W:{entry.score} L:{Math.abs(entry.subscore)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="stats-card">
+                <h3>Recent Matches</h3>
+                {history.length === 0 ? (
+                  <p className="muted-copy">
+                    {isStatsLoading ? "Loading..." : "No matches recorded yet."}
+                  </p>
+                ) : (
+                  <div className="stats-list">
+                    {history.map((item, idx) => (
+                      <div className="stats-row" key={`${item.matchId}-${idx}`}>
+                        <span>
+                          <span className={`result-pill ${item.result}`}>
+                            {item.result.toUpperCase()}
+                          </span>{" "}
+                          vs {item.opponentUsername || "Unknown"}
+                        </span>
+                        <span>{new Date(item.playedAt).toLocaleString()}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           </div>
         ) : (
-          <GameBoard username={username} roomId={currentRoomId} />
+          <GameBoard
+            username={username}
+            roomId={currentRoomId}
+            onExitGame={handleExitGame}
+          />
         )}
       </div>
     </div>

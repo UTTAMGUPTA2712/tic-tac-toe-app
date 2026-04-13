@@ -214,3 +214,92 @@ export const requestSyncState = async () => {
     console.error("Failed to request sync state:", error);
   }
 };
+
+export interface MatchHistoryItem {
+  matchId: string;
+  playedAt: number;
+  result: "win" | "loss" | "draw";
+  opponentId: string | null;
+  opponentUsername: string | null;
+}
+
+export interface LeaderboardItem {
+  ownerId: string;
+  username: string;
+  score: number;
+  subscore: number;
+  rank: number;
+  metadata?: {
+    draws?: number;
+    lastWinAt?: number | null;
+  };
+}
+
+export const getMatchHistory = async (
+  limit = 20,
+  cursor = "",
+): Promise<{ records: MatchHistoryItem[]; cursor: string }> => {
+  if (!currentSession) throw new Error("No active session");
+
+  const response = (await client.rpc(
+    currentSession,
+    "get_match_history",
+    { limit, cursor },
+  )) as any;
+  const payload = parsePayload(response.payload);
+
+  const records = (payload.records || []).map((obj: any) => {
+    const val = obj?.value || {};
+    return {
+      matchId: String(val.matchId || ""),
+      playedAt: Number(val.playedAt || 0),
+      result: (val.result || "draw") as "win" | "loss" | "draw",
+      opponentId: val.opponentId || null,
+      opponentUsername: val.opponentUsername || null,
+    } as MatchHistoryItem;
+  });
+
+  return {
+    records,
+    cursor: String(payload.cursor || ""),
+  };
+};
+
+export const getLeaderboard = async (
+  limit = 20,
+  cursor = "",
+): Promise<{ records: LeaderboardItem[]; cursor: string }> => {
+  if (!currentSession) throw new Error("No active session");
+
+  const response = (await client.rpc(
+    currentSession,
+    "get_leaderboard",
+    { limit, cursor },
+  )) as any;
+  const payload = parsePayload(response.payload);
+
+  const records = (payload.records || []).map((record: any) => ({
+    ownerId: String(record.owner_id || ""),
+    username: String(record.username || "unknown"),
+    score: Number(record.score || 0),
+    subscore: Number(record.subscore || 0),
+    rank: Number(record.rank || 0),
+    metadata: record.metadata || {},
+  })) as LeaderboardItem[];
+
+  return {
+    records,
+    cursor: String(payload.cursor || ""),
+  };
+};
+
+export const leaveMatch = async () => {
+  if (!currentSocket || !currentMatchId) {
+    return;
+  }
+  try {
+    await currentSocket.leaveMatch(currentMatchId);
+  } finally {
+    currentMatchId = null;
+  }
+};
