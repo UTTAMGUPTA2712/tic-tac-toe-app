@@ -1,6 +1,6 @@
 // src/hooks/useNakamaMatch.ts
 import { useEffect, useState, useCallback } from "react";
-import { getSocket, getCurrentMatchId, sendMove } from "../lib/nakama";
+import { getSocket, sendMove, sendRestart, requestSyncState } from "../lib/nakama";
 import { GameState, OpCode } from "../types/game";
 
 export const useNakamaMatch = (username: string) => {
@@ -80,8 +80,17 @@ export const useNakamaMatch = (username: string) => {
     const socket = getSocket();
     if (socket) {
       socket.onmatchdata = handleMatchData;
+      requestSyncState();
+
+      // Retry sync while waiting to avoid missed initial broadcasts.
+      if (!gameState) {
+        const timer = setInterval(() => {
+          requestSyncState();
+        }, 1500);
+        return () => clearInterval(timer);
+      }
     }
-  }, [handleMatchData]);
+  }, [handleMatchData, gameState]);
 
   const makeMove = useCallback(
     async (position: number) => {
@@ -91,10 +100,16 @@ export const useNakamaMatch = (username: string) => {
     [gameState],
   );
 
+  const restartGame = useCallback(async () => {
+    await sendRestart();
+    setStatus("Restart requested...");
+  }, []);
+
   return {
     gameState,
     mySymbol,
     makeMove,
+    restartGame,
     status,
   };
 };

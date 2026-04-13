@@ -1,114 +1,241 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
-  authenticate,
+  clearStoredSession,
   connectSocket,
-  findOrCreateMatch,
+  createRoom,
+  getConnectionInfo,
+  joinRoom,
   joinMatch,
+  loginUser,
+  restoreSessionFromStorage,
+  signUpUser,
 } from "./lib/nakama";
 import GameBoard from "./components/GameBoard";
 
+type Stage = "auth" | "lobby" | "game";
+type AuthMode = "signup" | "login";
+
 function App() {
-  const [username, setUsername] = useState(
-    `Player${Math.floor(Math.random() * 9999)}`,
-  );
+  const { host, port } = getConnectionInfo();
+  const [stage, setStage] = useState<Stage>("auth");
+  const [authMode, setAuthMode] = useState<AuthMode>("signup");
+  const [username, setUsername] = useState(`player${Math.floor(Math.random() * 9999)}`);
+  const [password, setPassword] = useState("");
+  const [roomIdInput, setRoomIdInput] = useState("");
+  const [currentRoomId, setCurrentRoomId] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isBootstrapping, setIsBootstrapping] = useState(true);
 
-  const startGame = async () => {
-    if (!username.trim()) return;
+  useEffect(() => {
+    const restore = async () => {
+      const { session, username: savedUsername } = restoreSessionFromStorage();
+      if (!session) {
+        setIsBootstrapping(false);
+        return;
+      }
 
+      try {
+        await connectSocket(session);
+        if (savedUsername) {
+          setUsername(savedUsername);
+        }
+        setStage("lobby");
+      } catch (_err) {
+        clearStoredSession();
+      } finally {
+        setIsBootstrapping(false);
+      }
+    };
+    restore();
+  }, []);
+
+  const handleAuth = async () => {
+    if (!username.trim() || !password.trim()) return;
     setIsLoading(true);
     setError("");
 
     try {
-      const session = await authenticate(username);
+      const session =
+        authMode === "signup"
+          ? await signUpUser(username.trim(), password)
+          : await loginUser(username.trim(), password);
       await connectSocket(session);
-      const matchId = await findOrCreateMatch();
-      await joinMatch(matchId);
-
-      setIsLoggedIn(true);
-      console.log("🎮 Game started successfully!");
+      setStage("lobby");
     } catch (err: any) {
-      console.error(err);
-      setError(
-        err.message ||
-          "Failed to connect. Is the Nakama server running on localhost:7350?",
-      );
+      setError(err.message || "Authentication failed.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleCreateRoom = async () => {
+    setIsLoading(true);
+    setError("");
+    try {
+      const roomId = await createRoom();
+      await joinMatch(roomId);
+      setCurrentRoomId(roomId);
+      setStage("game");
+    } catch (err: any) {
+      setError(err.message || "Failed to create room.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleJoinRoom = async () => {
+    if (!roomIdInput.trim()) return;
+    setIsLoading(true);
+    setError("");
+    try {
+      const roomId = await joinRoom(roomIdInput.trim());
+      await joinMatch(roomId);
+      setCurrentRoomId(roomId);
+      setStage("game");
+    } catch (err: any) {
+      setError(err.message || "Failed to join room.");
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-zinc-950 via-zinc-900 to-black text-white overflow-hidden">
-      {/* Background subtle grid */}
-      <div className="absolute inset-0 bg-[radial-gradient(#27272a_1px,transparent_1px)] bg-[length:30px_30px] opacity-30" />
-
-      <div className="relative min-h-screen flex flex-col items-center justify-center p-6">
-        {!isLoggedIn ? (
-          // === Login Screen ===
-          <div className="w-full max-w-md">
-            <div className="text-center mb-12">
-              <div className="inline-flex items-center justify-center w-20 h-20 bg-blue-500/10 rounded-3xl mb-6 border border-blue-500/20">
-                <span className="text-5xl">❌⭕</span>
+    <div className="app-shell">
+      <div className="app-bg-pattern" />
+      <div className="app-container">
+        {isBootstrapping ? (
+          <div className="login-card-wrap">
+            <div className="login-card">
+              <div className="field-stack">
+                <div className="connection-hint">Restoring session...</div>
               </div>
-              <h1 className="text-6xl font-bold tracking-tighter mb-2">
-                Tic Tac Toe
-              </h1>
-              <p className="text-2xl text-blue-400 font-medium">
-                Nakama Multiplayer
-              </p>
-              <p className="text-zinc-400 mt-3">Real-time • Global • Instant</p>
+            </div>
+          </div>
+        ) : stage === "auth" ? (
+          <div className="login-card-wrap">
+            <div className="login-title-wrap">
+              <div className="logo-badge">
+                <span>❌⭕</span>
+              </div>
+              <h1>Tic Tac Toe</h1>
+              <p className="subtitle">Signup / Login</p>
+              <p className="muted">No email verification required</p>
             </div>
 
-            <div className="bg-zinc-900/70 backdrop-blur-xl border border-zinc-700 rounded-3xl p-8 shadow-2xl">
-              <div className="space-y-6">
+            <div className="login-card">
+              <div className="toggle-row">
+                <button
+                  className={`toggle-btn ${authMode === "signup" ? "active" : ""}`}
+                  onClick={() => setAuthMode("signup")}
+                  type="button"
+                >
+                  Sign Up
+                </button>
+                <button
+                  className={`toggle-btn ${authMode === "login" ? "active" : ""}`}
+                  onClick={() => setAuthMode("login")}
+                  type="button"
+                >
+                  Login
+                </button>
+              </div>
+
+              <div className="field-stack">
                 <div>
-                  <label className="text-sm text-zinc-400 block mb-2">
-                    Your Username
-                  </label>
+                  <label className="input-label">Your Username</label>
                   <input
                     type="text"
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
                     placeholder="Enter a cool username"
-                    className="w-full bg-zinc-800 border border-zinc-700 focus:border-blue-500 rounded-2xl px-6 py-4 text-lg placeholder-zinc-500 focus:outline-none transition-all"
+                    className="text-input"
+                    disabled={isLoading}
+                  />
+                </div>
+                <div>
+                  <label className="input-label">Password</label>
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="Enter password"
+                    className="text-input"
                     disabled={isLoading}
                   />
                 </div>
 
                 <button
-                  onClick={startGame}
-                  disabled={isLoading || !username.trim()}
-                  className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 disabled:from-zinc-700 disabled:to-zinc-700 rounded-2xl text-xl font-semibold transition-all active:scale-[0.985] shadow-lg shadow-blue-500/30">
+                  onClick={handleAuth}
+                  disabled={isLoading || !username.trim() || !password.trim()}
+                  className="primary-btn"
+                >
                   {isLoading ? (
-                    <span className="flex items-center justify-center gap-3">
-                      <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      Connecting to Nakama...
+                    <span className="btn-content">
+                      <div className="spinner" />
+                      Connecting...
                     </span>
                   ) : (
-                    "Play Online Now"
+                    authMode === "signup" ? "Create Account" : "Login"
                   )}
                 </button>
 
                 {error && (
-                  <div className="bg-red-950/50 border border-red-500/30 text-red-400 px-5 py-3 rounded-2xl text-sm">
-                    {error}
-                  </div>
+                  <div className="error-box">{error}</div>
                 )}
               </div>
             </div>
 
-            <div className="mt-8 text-center text-xs text-zinc-500">
+            <div className="connection-hint">
               Make sure Nakama server is running on{" "}
-              <code className="bg-zinc-900 px-1.5 py-0.5 rounded">
-                localhost:7350
+              <code>
+                {host}:{port}
               </code>
             </div>
           </div>
+        ) : stage === "lobby" ? (
+          <div className="login-card-wrap">
+            <div className="login-title-wrap">
+              <h1>Game Lobby</h1>
+              <p className="subtitle">Welcome, {username}</p>
+            </div>
+
+            <div className="login-card">
+              <div className="field-stack">
+                <button
+                  className="primary-btn"
+                  onClick={handleCreateRoom}
+                  disabled={isLoading}
+                >
+                  Create Room
+                </button>
+
+                <div>
+                  <label className="input-label">Room ID</label>
+                  <input
+                    type="text"
+                    value={roomIdInput}
+                    onChange={(e) => setRoomIdInput(e.target.value)}
+                    placeholder="Paste room id"
+                    className="text-input"
+                    disabled={isLoading}
+                  />
+                </div>
+
+                <button
+                  className="secondary-btn full-btn"
+                  onClick={handleJoinRoom}
+                  disabled={isLoading || !roomIdInput.trim()}
+                >
+                  Join Room
+                </button>
+
+                {error && <div className="error-box">{error}</div>}
+              </div>
+            </div>
+          </div>
         ) : (
-          <GameBoard username={username} />
+          <GameBoard username={username} roomId={currentRoomId} />
         )}
       </div>
     </div>

@@ -20,5 +20,7 @@ export enum OpCode {
   GAME_OVER = 3,
   PLAYER_JOINED = 4,
   PLAYER_LEFT = 5,
+  RESTART = 6,
+  SYNC_STATE = 7,
   ERROR = 99,
 }
